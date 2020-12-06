@@ -313,186 +313,8 @@ __global__ void aes256_encrypt_ecb(uint8_t *buf_d, unsigned long numbytes, uint8
   unsigned long offset = (blockIdx.x * THREADS_PER_BLOCK ) + (threadIdx.x );
   //printf("%d\n",offset);
   if (offset >= numbytes) {  return; }
-
-  uint8_t state[16];
-  state[15] = offset & 0xFF;
-  state[14] = (offset >> 8) & 0xFF;
-  state[13] = (offset >> 16) & 0xFF;
-  state[12] = (offset >> 24) & 0xFF;
-  state[11] = 0; state[10] = 0; state[9] = 0; state[8] = 0; state[7] = 0; state[6] = 0;
-  state[5] = 0; state[4] = 0; state[3] = 0; state[2] = 0; state[1] = 0; state[0] = 0;
-
-  uint8_t temp, temp2;
-  uint8_t overflow = 0;
-  //if(tid < num_blocks) {
-    for(int i = 15; i != -1; i--) {
-      temp = g_counter_initial[i];
-      temp2 = state[i];
-      state[i] += temp + overflow;
-      overflow = ((int)temp2 + (int)temp + (int)overflow > 255);
-      //printf("%d %d*\n",offset,state[i]);
-    }
-  //  printf("%d\n",state[15]);
- // memcpy(buf_t, &buf_d[offset], AES_BLOCK_SIZE);
-  memcpy(buf_t, &state, AES_BLOCK_SIZE);
-  //printf("%d \n",buf_d[0]);
-  //printf("----------------------\n");
-  /*
-  for(int i=0;i<16;i++){
-    if(buf_t[i]==state[i]){
-      printf("hell yes\n");
-    }
-  }
-  */
-  aes_addRoundKey_cpy(buf_t, ctx_enckey_d, ctx_key_d);
-  //printf("%p %p\n",&buf_t,&state);
-  for(i = 1, rcon = 1; i < 14; ++i){
-   // printf("in here\n");
-    aes_subBytes(buf_t);
-
-    aes_shiftRows(buf_t);
-    aes_mixColumns(buf_t);
-    if( i & 1 ){
-      aes_addRoundKey( buf_t, &ctx_key_d[16]);
-    }
-    else{
-      aes_expandEncKey(ctx_key_d, &rcon, sbox), aes_addRoundKey(buf_t, ctx_key_d);
-    }
-    //printf("%d %d\n",buf_t[0],state[0]);
-  }
-//printf("%d %d**\n",buf_t[0],state[0]);
-  aes_subBytes(buf_t);
-  aes_shiftRows(buf_t);
-  aes_expandEncKey(ctx_key_d, &rcon, sbox);
-  aes_addRoundKey(buf_t, ctx_key_d);
-/*
-  for(int i=0;i<16;i++)
-  {
-    printf("%d: %d %d %d\n",offset,buf_t[i],state[i],buf_t[i]==state[i]);
-  }
-*/
-  //printf("%d %d??\n",buf_t[0],state[0]);
-  /* copy thread buffer back into global memory */
-  //cudaError_t error=cudaGetLastError();
-//printf("CUDA error2: %s\n", cudaGetErrorString(error));
-//printf("----------------------\n");
-//printf("%d %d \n",offset,buf_d[(offset << 4) + i]);
-  for(int i=0;i<16;i++){
-        
-      
-    buf_d[(offset << 4) + i] = buf_d[(offset << 4) + i] ^ buf_t[i];
-    //printf("%d\n",buf_d[(offset << 4) + i]);
-    //if(buf_t[i]==state[i]){
-    //  printf("hell no\n");
-    //}
-    //printf("%d*\n",buf_t[i]);
-  }
-//printf("----------------------\n");
-
-  //memcpy(&buf_d[offset], buf_t, AES_BLOCK_SIZE);
-  __syncthreads();
-} 
-
-__global__ void aes256_decrypt_ecb(uint8_t *buf_d, unsigned long numbytes, uint8_t *ctx_enckey_d, uint8_t *ctx_key_d){
-  uint8_t i, rcon;
-  uint8_t buf_t[AES_BLOCK_SIZE]; // thread buffer
-  //printf("Thread %d\n", threadIdx.x);
-  //unsigned long offset = (blockIdx.x * THREADS_PER_BLOCK * AES_BLOCK_SIZE) + (threadIdx.x * AES_BLOCK_SIZE);
-  unsigned long offset = (blockIdx.x * THREADS_PER_BLOCK ) + (threadIdx.x );
-  //printf("%d\n",offset);
-  if (offset >= numbytes) {  return; }
-
-  uint8_t state[16];
-  state[15] = offset & 0xFF;
-  state[14] = (offset >> 8) & 0xFF;
-  state[13] = (offset >> 16) & 0xFF;
-  state[12] = (offset >> 24) & 0xFF;
-  state[11] = 0; state[10] = 0; state[9] = 0; state[8] = 0; state[7] = 0; state[6] = 0;
-  state[5] = 0; state[4] = 0; state[3] = 0; state[2] = 0; state[1] = 0; state[0] = 0;
-
-  uint8_t temp, temp2;
-  uint8_t overflow = 0;
-  //if(tid < num_blocks) {
-    for(int i = 15; i != -1; i--) {
-      temp = g_counter_initial[i];
-      temp2 = state[i];
-      state[i] += temp + overflow;
-      overflow = ((int)temp2 + (int)temp + (int)overflow > 255);
-      //printf("%d %d*\n",offset,state[i]);
-    }
-  //  printf("%d\n",state[15]);
- // memcpy(buf_t, &buf_d[offset], AES_BLOCK_SIZE);
-  memcpy(buf_t, &state, AES_BLOCK_SIZE);
-  //printf("%d \n",buf_d[0]);
-  //printf("----------------------\n");
-  /*
-  for(int i=0;i<16;i++){
-    if(buf_t[i]==state[i]){
-      printf("hell yes\n");
-    }
-  }
-  */
-  aes_addRoundKey_cpy(buf_t, ctx_enckey_d, ctx_key_d);
-  //printf("%p %p\n",&buf_t,&state);
-  for(i = 1, rcon = 1; i < 14; ++i){
-   // printf("in here\n");
-    aes_subBytes(buf_t);
-
-    aes_shiftRows(buf_t);
-    aes_mixColumns(buf_t);
-    if( i & 1 ){
-      aes_addRoundKey( buf_t, &ctx_key_d[16]);
-    }
-    else{
-      aes_expandEncKey(ctx_key_d, &rcon, sbox), aes_addRoundKey(buf_t, ctx_key_d);
-    }
-    //printf("%d %d\n",buf_t[0],state[0]);
-  }
-//printf("%d %d**\n",buf_t[0],state[0]);
-  aes_subBytes(buf_t);
-  aes_shiftRows(buf_t);
-  aes_expandEncKey(ctx_key_d, &rcon, sbox);
-  aes_addRoundKey(buf_t, ctx_key_d);
-/*
-  for(int i=0;i<16;i++)
-  {
-    printf("%d: %d %d %d\n",offset,buf_t[i],state[i],buf_t[i]==state[i]);
-  }
-*/
-  //printf("%d %d??\n",buf_t[0],state[0]);
-  /* copy thread buffer back into global memory */
-  //cudaError_t error=cudaGetLastError();
-//printf("CUDA error2: %s\n", cudaGetErrorString(error));
-//printf("----------------------\n");
-//printf("%d %d \n",offset,buf_d[(offset << 4) + i]);
-  for(int i=0;i<16;i++){
-        
-      
-    buf_d[(offset << 4) + i] = buf_d[(offset << 4) + i] ^ buf_t[i];
-    //printf("%d\n",buf_d[(offset << 4) + i]);
-    //if(buf_t[i]==state[i]){
-    //  printf("hell no\n");
-    //}
-    //printf("%d*\n",buf_t[i]);
-  }
-//printf("----------------------\n");
-
-  //memcpy(&buf_d[offset], buf_t, AES_BLOCK_SIZE);
-  __syncthreads();
-} 
-
-// aes decrypt algorithm
-__global__ void aes256_decrypt_ecb2(uint8_t *buf_d, unsigned long numbytes, uint8_t *ctx_deckey_d, uint8_t *ctx_key_d){
-  uint8_t i, rcon;
-  //uint8_t buf_t[AES_BLOCK_SIZE];
-  uint8_t buf_t[AES_BLOCK_SIZE];
-  //unsigned long offset = (blockIdx.x * THREADS_PER_BLOCK * AES_BLOCK_SIZE) + (threadIdx.x * AES_BLOCK_SIZE);
-  unsigned long offset = (blockIdx.x * THREADS_PER_BLOCK ) + (threadIdx.x );
-  if (offset >= numbytes) { return; }
-
   //Initial state is the block number + initial counter
   //why
-
   uint8_t state[16];
   state[15] = offset & 0xFF;
   state[14] = (offset >> 8) & 0xFF;
@@ -503,35 +325,59 @@ __global__ void aes256_decrypt_ecb2(uint8_t *buf_d, unsigned long numbytes, uint
 
   uint8_t temp, temp2;
   uint8_t overflow = 0;
-  if (offset < numbytes) {
+  //if(tid < num_blocks) {
     for(int i = 15; i != -1; i--) {
       temp = g_counter_initial[i];
       temp2 = state[i];
       state[i] += temp + overflow;
       overflow = ((int)temp2 + (int)temp + (int)overflow > 255);
+      //printf("%d %d*\n",offset,state[i]);
+    }
+  //  printf("%d\n",state[15]);
+ // memcpy(buf_t, &buf_d[offset], AES_BLOCK_SIZE);
+  memcpy(buf_t, &state, AES_BLOCK_SIZE);
+  //printf("%d \n",buf_d[0]);
+  //printf("----------------------\n");
+  /*
+  for(int i=0;i<16;i++){
+    if(buf_t[i]==state[i]){
+      printf("hell yes\n");
     }
   }
+  */
+  aes_addRoundKey_cpy(buf_t, ctx_enckey_d, ctx_key_d);
+  //printf("%p %p\n",&buf_t,&state);
+  for(i = 1, rcon = 1; i < 14; ++i){
+   // printf("in here\n");
+    aes_subBytes(buf_t);
 
-
-
-  //memcpy(buf_t, &buf_d[offset], AES_BLOCK_SIZE);
-  memcpy(buf_t, &state, AES_BLOCK_SIZE);
-  aes_addRoundKey_cpy(buf_t, ctx_deckey_d, ctx_key_d);
-  aes_shiftRows_inv(buf_t);
-  aes_subBytes_inv(buf_t);
-  for (i = 14, rcon = 0x80; --i;){
-    if( ( i & 1 ) ){
-      aes_expandDecKey(ctx_key_d, &rcon);
-      aes_addRoundKey(buf_t, &ctx_key_d[16]);
+    aes_shiftRows(buf_t);
+    aes_mixColumns(buf_t);
+    if( i & 1 ){
+      aes_addRoundKey( buf_t, &ctx_key_d[16]);
     }
     else{
-      aes_addRoundKey(buf_t, ctx_key_d);
+      aes_expandEncKey(ctx_key_d, &rcon, sbox), aes_addRoundKey(buf_t, ctx_key_d);
     }
-    aes_mixColumns_inv(buf_t);
-    aes_shiftRows_inv(buf_t);
-    aes_subBytes_inv(buf_t);
-    }
-  aes_addRoundKey( buf_t, ctx_key_d);
+    //printf("%d %d\n",buf_t[0],state[0]);
+  }
+//printf("%d %d**\n",buf_t[0],state[0]);
+  aes_subBytes(buf_t);
+  aes_shiftRows(buf_t);
+  aes_expandEncKey(ctx_key_d, &rcon, sbox);
+  aes_addRoundKey(buf_t, ctx_key_d);
+/*
+  for(int i=0;i<16;i++)
+  {
+    printf("%d: %d %d %d\n",offset,buf_t[i],state[i],buf_t[i]==state[i]);
+  }
+*/
+  //printf("%d %d??\n",buf_t[0],state[0]);
+  /* copy thread buffer back into global memory */
+  //cudaError_t error=cudaGetLastError();
+//printf("CUDA error2: %s\n", cudaGetErrorString(error));
+//printf("----------------------\n");
+//printf("%d %d \n",offset,buf_d[(offset << 4) + i]);
   /* copy thread back into global memory */
 /*
     buf_d[(offset << 4) + 0] = buf_d[(offset << 4) + 0] ^ state[0];
@@ -551,20 +397,20 @@ __global__ void aes256_decrypt_ecb2(uint8_t *buf_d, unsigned long numbytes, uint
     buf_d[(offset << 4) + 14] = buf_d[(offset << 4) + 14] ^ state[14];
     buf_d[(offset << 4) + 15] = buf_d[(offset << 4) + 15] ^ state[15];
 */
-  if (offset < numbytes){
-      for(int i=0;i<16;i++){
-      //printf("%d %d ",offset,buf_d[(offset << 4) + i]);
-      buf_d[(offset << 4) + i] = buf_d[(offset << 4) + i] ^ buf_t[i];
-      //printf("%d\n",buf_d[(offset << 4) + i]);
-    }
+  for(int i=0;i<16;i++){
+        
+      
+    buf_d[(offset << 4) + i] = buf_d[(offset << 4) + i] ^ buf_t[i];
+    //printf("%d\n",buf_d[(offset << 4) + i]);
+    //if(buf_t[i]==state[i]){
+    //  printf("hell no\n");
+    //}
+    //printf("%d*\n",buf_t[i]);
   }
-  
-
+//printf("----------------------\n");
 
   //memcpy(&buf_d[offset], buf_t, AES_BLOCK_SIZE);
   __syncthreads();
-
-
 } 
 
 
@@ -682,38 +528,6 @@ printf("CUDA error233: %s\n", cudaGetErrorString(error2));
 }
 
 
-// aes decrypt demo
-void decryptdemo(uint8_t key[32], uint8_t *buf, unsigned long numbytes){
-  uint8_t *buf_d;
-  uint8_t *ctx_key_d, *ctx_deckey_d;
-
-  cudaMemcpyToSymbol(sboxinv, sboxinv, sizeof(uint8_t)*256);
-
-  printf("\nBeginning decryption\n");
-
-  cudaMalloc((void**)&buf_d, numbytes);
-  cudaMalloc((void**)&ctx_deckey_d, sizeof(ctx_deckey));
-  cudaMalloc((void**)&ctx_key_d, sizeof(ctx_key));
-
-  cudaMemcpy(buf_d, buf, numbytes, cudaMemcpyHostToDevice);
-  cudaMemcpy(ctx_deckey_d, ctx_deckey, sizeof(ctx_deckey), cudaMemcpyHostToDevice);
-  cudaMemcpy(ctx_key_d, ctx_key, sizeof(ctx_key), cudaMemcpyHostToDevice);
-
-  dim3 dimBlock(ceil((double)numbytes / (double)(THREADS_PER_BLOCK * AES_BLOCK_SIZE)));
-  dim3 dimGrid(THREADS_PER_BLOCK);
-  printf("Creating %d threads over %d blocks\n", dimBlock.x*dimGrid.x, dimBlock.x);
-  aes256_decrypt_ecb<<<dimBlock, dimGrid>>>(buf_d, numbytes, ctx_deckey_d, ctx_key_d);
-
-  cudaMemcpy(buf, buf_d, numbytes, cudaMemcpyDeviceToHost);
-  cudaMemcpy(ctx_deckey, ctx_deckey_d, sizeof(ctx_deckey), cudaMemcpyDeviceToHost);
-  cudaMemcpy(ctx_key, ctx_key_d, sizeof(ctx_key), cudaMemcpyDeviceToHost);
-
-  cudaFree(buf_d);
-  cudaFree(ctx_key_d);
-  cudaFree(ctx_deckey_d);
-}
-
-
 __global__ void GPU_init() { }
 
 
@@ -747,7 +561,7 @@ int main(){
 
 
   // handle txt file
-  fname = "input2.txt";  
+  fname = "input4.txt";  
   file = fopen(fname, "r");
   if (file == NULL) {printf("File %s doesn't exist\n", fname); exit(1); }
   printf("Opened file %s\n", fname);
@@ -811,7 +625,7 @@ int main(){
   cudaEventCreate(&stop1);
   cudaEventRecord(start1, NULL);
 
-  decryptdemo(key, buf, numbytes);
+  encryptdemo(key, buf, numbytes);
 
   cudaEventRecord(stop1, NULL);
   cudaEventSynchronize(stop1);
