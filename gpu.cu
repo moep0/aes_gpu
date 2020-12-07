@@ -4,6 +4,13 @@
 #include <time.h>
 #include <math.h>
 #include <inttypes.h>
+#include <iostream>
+#include <fstream>
+#include <cstring>
+#include <iomanip>
+#include <cuda.h>
+
+using namespace std;
 
 
 uint8_t ctx_key[32]; 
@@ -18,6 +25,40 @@ uint8_t ctx_deckey[32];
 #define F(x)   (((x)<<1) ^ ((((x)>>7) & 1) * 0x1b))
 #define FD(x)  (((x) >> 1) ^ (((x) & 1) ? 0x8d : 0))
 
+uint8_t s_box[256] = {
+    0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5,
+    0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
+    0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0,
+    0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0,
+    0xb7, 0xfd, 0x93, 0x26, 0x36, 0x3f, 0xf7, 0xcc,
+    0x34, 0xa5, 0xe5, 0xf1, 0x71, 0xd8, 0x31, 0x15,
+    0x04, 0xc7, 0x23, 0xc3, 0x18, 0x96, 0x05, 0x9a,
+    0x07, 0x12, 0x80, 0xe2, 0xeb, 0x27, 0xb2, 0x75,
+    0x09, 0x83, 0x2c, 0x1a, 0x1b, 0x6e, 0x5a, 0xa0,
+    0x52, 0x3b, 0xd6, 0xb3, 0x29, 0xe3, 0x2f, 0x84,
+    0x53, 0xd1, 0x00, 0xed, 0x20, 0xfc, 0xb1, 0x5b,
+    0x6a, 0xcb, 0xbe, 0x39, 0x4a, 0x4c, 0x58, 0xcf,
+    0xd0, 0xef, 0xaa, 0xfb, 0x43, 0x4d, 0x33, 0x85,
+    0x45, 0xf9, 0x02, 0x7f, 0x50, 0x3c, 0x9f, 0xa8,
+    0x51, 0xa3, 0x40, 0x8f, 0x92, 0x9d, 0x38, 0xf5,
+    0xbc, 0xb6, 0xda, 0x21, 0x10, 0xff, 0xf3, 0xd2,
+    0xcd, 0x0c, 0x13, 0xec, 0x5f, 0x97, 0x44, 0x17,
+    0xc4, 0xa7, 0x7e, 0x3d, 0x64, 0x5d, 0x19, 0x73,
+    0x60, 0x81, 0x4f, 0xdc, 0x22, 0x2a, 0x90, 0x88,
+    0x46, 0xee, 0xb8, 0x14, 0xde, 0x5e, 0x0b, 0xdb,
+    0xe0, 0x32, 0x3a, 0x0a, 0x49, 0x06, 0x24, 0x5c,
+    0xc2, 0xd3, 0xac, 0x62, 0x91, 0x95, 0xe4, 0x79,
+    0xe7, 0xc8, 0x37, 0x6d, 0x8d, 0xd5, 0x4e, 0xa9,
+    0x6c, 0x56, 0xf4, 0xea, 0x65, 0x7a, 0xae, 0x08,
+    0xba, 0x78, 0x25, 0x2e, 0x1c, 0xa6, 0xb4, 0xc6,
+    0xe8, 0xdd, 0x74, 0x1f, 0x4b, 0xbd, 0x8b, 0x8a,
+    0x70, 0x3e, 0xb5, 0x66, 0x48, 0x03, 0xf6, 0x0e,
+    0x61, 0x35, 0x57, 0xb9, 0x86, 0xc1, 0x1d, 0x9e,
+    0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9, 0x8e, 0x94,
+    0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf,
+    0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68,
+    0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16
+};
 
 // S table
 __constant__ static const uint8_t sbox[256] = {
@@ -120,11 +161,27 @@ __device__ void aes_subBytes_inv(uint8_t *buf){
 
 
 // add round key operation
-__device__ void aes_addRoundKey(uint8_t *buf, uint8_t *key){
-  register uint8_t i = 16;
-  while (i--){
-    buf[i] ^= key[i];
-  }
+__device__ void aes_addRoundKey(uint8_t *buf, uint8_t *key,uint8_t r){
+  //register uint8_t i = 16;
+  //while (i--){
+   buf[16] ^= key[16*r+16];
+   buf[15] ^= key[16*r+15];
+   buf[14] ^= key[16*r+14];
+   buf[13] ^= key[16*r+13];
+   buf[12] ^= key[16*r+12];
+   buf[11] ^= key[16*r+11];
+   buf[10] ^= key[16*r+10];
+   buf[9] ^= key[16*r+9];
+   buf[8] ^= key[16*r+8];
+   buf[7] ^= key[16*r+7];
+   buf[6] ^= key[16*r+6];
+   buf[5] ^= key[16*r+5];
+   buf[4] ^= key[16*r+4];
+   buf[3] ^= key[16*r+3];
+   buf[2] ^= key[16*r+2];
+   buf[1] ^= key[16*r+1];
+   buf[0] ^= key[16*r+0];
+  //}
 } 
 
 
@@ -220,9 +277,77 @@ __device__ void aes_mixColumns_inv(uint8_t *buf){
   }
 } 
 
+void rot_word(uint8_t *w) {
+
+	uint8_t tmp;
+	uint8_t i;
+
+	tmp = w[0];
+
+	for (i = 0; i < 3; i++) {
+		w[i] = w[i+1];
+	}
+
+	w[3] = tmp;
+}
+void sub_word(uint8_t *w) {
+
+	uint8_t i;
+
+	for (i = 0; i < 4; i++) {
+		w[i] = s_box[w[i]];
+	}
+}
+void aes_key_expansion(uint8_t *key, uint8_t *w) {
+	uint8_t tmp[4];
+	uint8_t i;
+	int Nb=4;
+	int Nr=14;
+	int Nk=8;
+	uint8_t len = Nb*(Nr+1);
+	uint8_t RC[11] = {0x00,0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1B,0x36};
+
+	for (i = 0; i < Nk; i++) {
+		w[4*i+0] = key[4*i+0];
+		w[4*i+1] = key[4*i+1];
+		w[4*i+2] = key[4*i+2];
+		w[4*i+3] = key[4*i+3];
+	}
+
+	for (i = Nk; i < len; i++) {
+		tmp[0] = w[4*(i-1)+0];
+		tmp[1] = w[4*(i-1)+1];
+		tmp[2] = w[4*(i-1)+2];
+		tmp[3] = w[4*(i-1)+3];
+
+		if (i%Nk == 0) {
+
+			rot_word(tmp);
+			sub_word(tmp);
+			//coef_add(tmp, Rcon(i/Nk), tmp);
+
+			tmp[0] = RC[i/Nk]^tmp[0];
+			tmp[1] = 0x00^tmp[1];
+			tmp[2] = 0x00^tmp[2];
+			tmp[3] = 0x00^tmp[3];
+
+
+		} else if (Nk > 6 && i%Nk == 4) {
+
+			sub_word(tmp);
+
+		}
+
+		w[4*i+0] = w[4*(i-Nk)+0]^tmp[0];
+		w[4*i+1] = w[4*(i-Nk)+1]^tmp[1];
+		w[4*i+2] = w[4*(i-Nk)+2]^tmp[2];
+		w[4*i+3] = w[4*(i-Nk)+3]^tmp[3];
+	}
+
+}
 
 // add expand key operation
-__device__ __host__ void aes_expandEncKey(uint8_t *k, uint8_t *rc, const uint8_t *sb){
+/*__device__ __host__ void aes_expandEncKey(uint8_t *k, uint8_t *rc, const uint8_t *sb){
   register uint8_t i;
 
   k[0] ^= sb[k[29]] ^ (*rc);
@@ -282,11 +407,11 @@ __device__ void aes_expandDecKey(uint8_t *k, uint8_t *rc){
   k[1] ^= sbox[k[30]];
   k[2] ^= sbox[k[31]];
   k[3] ^= sbox[k[28]];
-} 
+}*/ 
 
 
 // key initition
-void aes256_init(uint8_t *k){
+/*void aes256_init(uint8_t *k){
   uint8_t rcon = 1;
   register uint8_t i;
 
@@ -296,35 +421,29 @@ void aes256_init(uint8_t *k){
   for (i = 8;--i;){
     aes_expandEncKey(ctx_deckey, &rcon, sbox);
   }
-} 
+}*/ 
 
 
 
 // aes encrypt algorithm one thread/one block with AES_BLOCK_SIZE 
-__global__ void aes256_encrypt_ecb(uint8_t *buf_d, unsigned long numbytes, uint8_t *ctx_enckey_d, uint8_t *ctx_key_d){
-  uint8_t i, rcon;
+__global__ void aes256_encrypt_ecb(uint8_t *buf_d, unsigned long numbytes, uint8_t *key){
+  uint8_t i;
   uint8_t buf_t[AES_BLOCK_SIZE]; // thread buffer
   //printf("Thread %d\n", threadIdx.x);
   unsigned long offset = (blockIdx.x * THREADS_PER_BLOCK * AES_BLOCK_SIZE) + (threadIdx.x * AES_BLOCK_SIZE);
   if (offset >= numbytes) {  return; }
-
   memcpy(buf_t, &buf_d[offset], AES_BLOCK_SIZE);
-  aes_addRoundKey_cpy(buf_t, ctx_enckey_d, ctx_key_d);
-  for(i = 1, rcon = 1; i < 14; ++i){
+
+  aes_addRoundKey(buf_t, key,0);
+  for(i = 1; i < 14; i++){
     aes_subBytes(buf_t);
     aes_shiftRows(buf_t);
     aes_mixColumns(buf_t);
-    if( i & 1 ){
-      aes_addRoundKey( buf_t, &ctx_key_d[16]);
-    }
-    else{
-      aes_expandEncKey(ctx_key_d, &rcon, sbox), aes_addRoundKey(buf_t, ctx_key_d);
-    }
+    aes_addRoundKey( buf_t, key,i);
   }
   aes_subBytes(buf_t);
   aes_shiftRows(buf_t);
-  aes_expandEncKey(ctx_key_d, &rcon, sbox);
-  aes_addRoundKey(buf_t, ctx_key_d);
+  aes_addRoundKey(buf_t,key,14);
   /* copy thread buffer back into global memory */
   memcpy(&buf_d[offset], buf_t, AES_BLOCK_SIZE);
   __syncthreads();
@@ -333,29 +452,24 @@ __global__ void aes256_encrypt_ecb(uint8_t *buf_d, unsigned long numbytes, uint8
 
 
 // aes decrypt algorithm
-__global__ void aes256_decrypt_ecb(uint8_t *buf_d, unsigned long numbytes, uint8_t *ctx_deckey_d, uint8_t *ctx_key_d){
+__global__ void aes256_decrypt_ecb(uint8_t *buf_d, unsigned long numbytes, uint8_t *key){
   uint8_t i, rcon;
   uint8_t buf_t[AES_BLOCK_SIZE];
   unsigned long offset = (blockIdx.x * THREADS_PER_BLOCK * AES_BLOCK_SIZE) + (threadIdx.x * AES_BLOCK_SIZE);
   if (offset >= numbytes) { return; }
   memcpy(buf_t, &buf_d[offset], AES_BLOCK_SIZE);
-  aes_addRoundKey_cpy(buf_t, ctx_deckey_d, ctx_key_d);
+
+  aes_addRoundKey(buf_t, key,14);
+  for (i = 1; i < 14; i++){
+  	aes_shiftRows_inv(buf_t);
+  	aes_subBytes_inv(buf_t);
+  	aes_addRoundKey( buf_t,  key,14-i);
+    aes_mixColumns_inv(buf_t);
+    }
   aes_shiftRows_inv(buf_t);
   aes_subBytes_inv(buf_t);
-  for (i = 14, rcon = 0x80; --i;){
-    if( ( i & 1 ) ){
-      aes_expandDecKey(ctx_key_d, &rcon);
-      aes_addRoundKey(buf_t, &ctx_key_d[16]);
-    }
-    else{
-      aes_addRoundKey(buf_t, ctx_key_d);
-    }
-    aes_mixColumns_inv(buf_t);
-    aes_shiftRows_inv(buf_t);
-    aes_subBytes_inv(buf_t);
-    }
-  aes_addRoundKey( buf_t, ctx_key_d);
-  /* copy thread back into global memory */
+  aes_addRoundKey( buf_t,  key,0);
+  //copy thread back into global memory
   memcpy(&buf_d[offset], buf_t, AES_BLOCK_SIZE);
   __syncthreads();
 } 
@@ -363,100 +477,98 @@ __global__ void aes256_decrypt_ecb(uint8_t *buf_d, unsigned long numbytes, uint8
 
 
 // aes encrypt demo
-void encryptdemo(uint8_t key[32], uint8_t *buf, unsigned long numbytes){
+void encryptdemo(uint8_t *key, uint8_t *buf, unsigned long numbytes){
   uint8_t *buf_d;
-  uint8_t *ctx_key_d, *ctx_enckey_d;
+  uint8_t *w_d;
+  uint8_t *w;
+  cudaError_t error2;
+// expanded key
 
   cudaMemcpyToSymbol(sbox, sbox, sizeof(uint8_t)*256);
 
   printf("\nBeginning encryption\n");
-  aes256_init(key);
+  cudaEvent_t start1;
+  cudaEventCreate(&start1);
+  cudaEvent_t stop1;
+  cudaEventCreate(&stop1);
+  cudaEventRecord(start1, NULL);
+  //aes256_init(key);
+  w = (uint8_t*)malloc(60*sizeof(uint8_t));
+  aes_key_expansion(key, w);
 
   cudaMalloc((void**)&buf_d, numbytes);
-  cudaMalloc((void**)&ctx_enckey_d, sizeof(ctx_enckey));
-  cudaMalloc((void**)&ctx_key_d, sizeof(ctx_key));
-/*
-cudaError_t cudaMalloc(void** devPtr, size_t size);
-这个函数和C语言中的malloc类似，但是在device上申请一定字节大小的显存，
-其中devPtr是指向所分配内存的指针。
-同时要释放分配的内存使用cudaFree函数，这和C语言中的free函数对应。
-另外一个重要的函数是负责host和device之间数据通信的cudaMemcpy函数：
-*/
-  cudaMemcpy(buf_d, buf, numbytes, cudaMemcpyHostToDevice);
-  cudaMemcpy(ctx_enckey_d, ctx_enckey, sizeof(ctx_enckey), cudaMemcpyHostToDevice);
-  cudaMemcpy(ctx_key_d, ctx_key, sizeof(ctx_key), cudaMemcpyHostToDevice);
-  /*
-  cudaError_t cudaMemcpy(void* dst, const void* src, size_t count, cudaMemcpyKind kind)
-其中src指向数据源，而dst是目标区域，count是复制的字节数，
-其中kind控制复制的方向：
-cudaMemcpyHostToHost, 
-cudaMemcpyHostToDevice, 
-cudaMemcpyDeviceToHost及cudaMemcpyDeviceToDevice，
-如cudaMemcpyHostToDevice将host上数据拷贝到device上。
-  */
-  dim3 dimBlock(ceil((double)numbytes / (double)(THREADS_PER_BLOCK * AES_BLOCK_SIZE)));
-  dim3 dimGrid(THREADS_PER_BLOCK);
-  // printf("Creating %d threads over %d blocks\n", dimBlock.x*dimGrid.x, dimBlock.x);
-  aes256_encrypt_ecb<<<dimBlock, dimGrid>>>(buf_d, numbytes, ctx_enckey_d, ctx_key_d);
-  /*
-一个kernel所启动的所有线程称为一个网格（grid），
-同一个网格上的线程共享相同的全局内存空间，grid是线程结构的第一层次，
-而网格又可以分为很多线程块（block），一个线程块里面包含很多线程，这是第二个层次。
-线程两层组织结构如下图所示，这是一个gird和block均为2-dim的线程组织。
-grid和block都是定义为dim3类型的变量，
-dim3可以看成是包含三个无符号整数（x，y，z）成员的结构体变量，
-在定义时，缺省值初始化为1。
-因此grid和block可以灵活地定义为1-dim，2-dim以及3-dim结构，
-对于图中结构（主要水平方向为x轴），定义的grid和block如下所示，
-kernel在调用时也必须通过执行配置<<<grid, block>>>来指定kernel所使用的线程数及结构。
-kernel的这种线程组织结构天然适合vector,matrix等运算，
-如我们将利用上图2-dim结构实现两个矩阵的加法，每个线程负责处理每个位置的两个元素相加，
-https://zhuanlan.zhihu.com/p/34587739
-https://www.cnblogs.com/skyfsm/p/9673960.html
-https://github.com/Canhui/AES-ON-GPU
-https://zhuanlan.zhihu.com/p/99880204
-https://blog.ailemon.me/2020/07/27/windows-install-cuda-and-cudnn-environment/
-  */
-  cudaMemcpy(buf, buf_d, numbytes, cudaMemcpyDeviceToHost);
-  // print(buf);
-  cudaMemcpy(ctx_enckey, ctx_enckey_d, sizeof(ctx_enckey), cudaMemcpyDeviceToHost);
-  cudaMemcpy(ctx_key, ctx_key_d, sizeof(ctx_key), cudaMemcpyDeviceToHost);
-
-  cudaFree(buf_d);
-  cudaFree(ctx_key_d);
-  cudaFree(ctx_enckey_d);
-}
-
-
-// aes decrypt demo
-void decryptdemo(uint8_t key[32], uint8_t *buf, unsigned long numbytes){
-  uint8_t *buf_d;
-  uint8_t *ctx_key_d, *ctx_deckey_d;
-
-  cudaMemcpyToSymbol(sboxinv, sboxinv, sizeof(uint8_t)*256);
-
-  printf("\nBeginning decryption\n");
-
-  cudaMalloc((void**)&buf_d, numbytes);
-  cudaMalloc((void**)&ctx_deckey_d, sizeof(ctx_deckey));
-  cudaMalloc((void**)&ctx_key_d, sizeof(ctx_key));
+  cudaMalloc((void**)&w_d, 60*sizeof(uint8_t));
 
   cudaMemcpy(buf_d, buf, numbytes, cudaMemcpyHostToDevice);
-  cudaMemcpy(ctx_deckey_d, ctx_deckey, sizeof(ctx_deckey), cudaMemcpyHostToDevice);
-  cudaMemcpy(ctx_key_d, ctx_key, sizeof(ctx_key), cudaMemcpyHostToDevice);
+  cudaMemcpy(w_d, w, 60*sizeof(uint8_t), cudaMemcpyHostToDevice);
 
   dim3 dimBlock(ceil((double)numbytes / (double)(THREADS_PER_BLOCK * AES_BLOCK_SIZE)));
   dim3 dimGrid(THREADS_PER_BLOCK);
   printf("Creating %d threads over %d blocks\n", dimBlock.x*dimGrid.x, dimBlock.x);
-  aes256_decrypt_ecb<<<dimBlock, dimGrid>>>(buf_d, numbytes, ctx_deckey_d, ctx_key_d);
 
+
+
+  aes256_encrypt_ecb<<<dimBlock, dimGrid>>>(buf_d, numbytes, w_d);
+error2=cudaGetLastError();
+printf("CUDA error134.5: %s\n", cudaGetErrorString(error2));
   cudaMemcpy(buf, buf_d, numbytes, cudaMemcpyDeviceToHost);
-  cudaMemcpy(ctx_deckey, ctx_deckey_d, sizeof(ctx_deckey), cudaMemcpyDeviceToHost);
-  cudaMemcpy(ctx_key, ctx_key_d, sizeof(ctx_key), cudaMemcpyDeviceToHost);
-
+  
+  cudaEventRecord(stop1, NULL);
+  cudaEventSynchronize(stop1);
+  float msecTotal1 = 0.0f,total;
+  cudaEventElapsedTime(&msecTotal1, start1, stop1);
+  total=msecTotal1/1000;
+  cout<<"time:"<<total<<endl;
+  cout<<"Throughput:"<<numbytes/total/1024/1024/1024<<" Gbps"<<endl;
+error2=cudaGetLastError();
+printf("CUDA error134.5: %s\n", cudaGetErrorString(error2));
+  cudaMemcpy(buf, buf_d, numbytes, cudaMemcpyDeviceToHost);
   cudaFree(buf_d);
-  cudaFree(ctx_key_d);
-  cudaFree(ctx_deckey_d);
+  cudaFree(w_d);
+}
+
+// aes decrypt demo
+void decryptdemo(uint8_t *key, uint8_t *buf, unsigned long numbytes){
+  uint8_t *buf_d;
+  uint8_t *w_d;
+  uint8_t *w;
+  cudaError_t error2;
+
+  cudaMemcpyToSymbol(sboxinv, sboxinv, sizeof(uint8_t)*256);
+
+  printf("\nBeginning decryption\n");
+  cudaEvent_t start1;
+  cudaEventCreate(&start1);
+  cudaEvent_t stop1;
+  cudaEventCreate(&stop1);
+  cudaEventRecord(start1, NULL);
+  w = (uint8_t*)malloc(60*sizeof(uint8_t));
+  aes_key_expansion(key, w);
+
+  cudaMalloc((void**)&buf_d, numbytes);
+  cudaMalloc((void**)&w_d, 60*sizeof(uint8_t));
+
+  cudaMemcpy(buf_d, buf, numbytes, cudaMemcpyHostToDevice);
+  cudaMemcpy(w_d, w, 60*sizeof(uint8_t), cudaMemcpyHostToDevice);
+
+  dim3 dimBlock(ceil((double)numbytes / (double)(THREADS_PER_BLOCK * AES_BLOCK_SIZE)));
+  dim3 dimGrid(THREADS_PER_BLOCK);
+  printf("Creating %d threads over %d blocks\n", dimBlock.x*dimGrid.x, dimBlock.x);
+  aes256_decrypt_ecb<<<dimBlock, dimGrid>>>(buf_d, numbytes, w_d);
+error2=cudaGetLastError();
+printf("CUDA error134.5: %s\n", cudaGetErrorString(error2));
+  cudaMemcpy(buf, buf_d, numbytes, cudaMemcpyDeviceToHost);
+
+  cudaEventRecord(stop1, NULL);
+  cudaEventSynchronize(stop1);
+  float msecTotal1 = 0.0f,total;
+  cudaEventElapsedTime(&msecTotal1, start1, stop1);
+  total=msecTotal1/1000;
+  //cout<<"time:"<<total<<endl;
+  //cout<<"Throughput:"<<numbytes/total/1024/1024/1024<<" Gbps"<<endl;
+  cudaFree(buf_d);
+  cudaFree(w_d);
+
 }
 
 
@@ -513,7 +625,7 @@ int main(){
   fclose(file);
 
   // calculate the padding
-  padding = numbytes % AES_BLOCK_SIZE;
+  padding = AES_BLOCK_SIZE - numbytes % AES_BLOCK_SIZE;
   numbytes += padding;
   printf("Padding file with %d bytes for a new size of %lu\n", padding, numbytes);
 
@@ -524,12 +636,8 @@ int main(){
   GPU_init<<<1, 1>>>();
 
   // encryption
-  start = clock();
+  
   encryptdemo(key, buf, numbytes);
-  end = clock();
-  printf("time used:%f\n",  (double)(end - start) / CLOCKS_PER_SEC);
-  printf("GPU encryption throughput: %f bytes/second\n",  (double)(numbytes) / ((double)(end - start) / CLOCKS_PER_SEC));
-
 
   // write into file
   file = fopen("cipher.txt", "w");
@@ -537,18 +645,13 @@ int main(){
   fclose(file);
 
   // decryption
-  start = clock();
   decryptdemo(key, buf, numbytes);
-  end = clock();
-  printf("time used:%f\n",  (double)(end - start) / CLOCKS_PER_SEC);
-  printf("GPU encryption throughput: %f bytes/second\n",  (double)(numbytes) / ((double)(end - start) / CLOCKS_PER_SEC));
-
-
   // write into file
   file = fopen("output.txt", "w");
   fwrite(buf, 1, numbytes - padding, file);
   fclose(file);
 
   free(buf);
+
   return EXIT_SUCCESS;
 }
