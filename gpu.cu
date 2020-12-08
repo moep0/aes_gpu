@@ -10,12 +10,12 @@
 #include <iomanip>
 #include <cuda.h>
 
-using namespace std;
 
 
 uint8_t ctx_key[32]; 
 uint8_t ctx_enckey[32]; 
 uint8_t ctx_deckey[32];
+uint8_t *w_d;
 
 
 #define AES_BLOCK_SIZE 16
@@ -479,9 +479,8 @@ __global__ void aes256_decrypt_ecb(uint8_t *buf_d, unsigned long numbytes, uint8
 // aes encrypt demo
 void encryptdemo(uint8_t *key, uint8_t *buf, unsigned long numbytes){
   uint8_t *buf_d;
-  uint8_t *w_d;
+  //uint8_t *w_d;
   uint8_t *w;
-  cudaError_t error2;
 // expanded key
 
   cudaMemcpyToSymbol(sbox, sbox, sizeof(uint8_t)*256);
@@ -491,48 +490,42 @@ void encryptdemo(uint8_t *key, uint8_t *buf, unsigned long numbytes){
   cudaEventCreate(&start1);
   cudaEvent_t stop1;
   cudaEventCreate(&stop1);
-  cudaEventRecord(start1, NULL);
+  cudaEventRecord(start1);
   //aes256_init(key);
-  w = (uint8_t*)malloc(60*sizeof(uint8_t));
+
+  w = (uint8_t*)malloc(240*sizeof(uint8_t));
   aes_key_expansion(key, w);
 
   cudaMalloc((void**)&buf_d, numbytes);
-  cudaMalloc((void**)&w_d, 60*sizeof(uint8_t));
+  cudaMalloc((void**)&w_d, 240*sizeof(uint8_t));
 
   cudaMemcpy(buf_d, buf, numbytes, cudaMemcpyHostToDevice);
-  cudaMemcpy(w_d, w, 60*sizeof(uint8_t), cudaMemcpyHostToDevice);
+  cudaMemcpyToSymbol(w_d, w, 240*sizeof(uint8_t), cudaMemcpyHostToDevice);
 
   dim3 dimBlock(ceil((double)numbytes / (double)(THREADS_PER_BLOCK * AES_BLOCK_SIZE)));
   dim3 dimGrid(THREADS_PER_BLOCK);
   printf("Creating %d threads over %d blocks\n", dimBlock.x*dimGrid.x, dimBlock.x);
 
-
-
   aes256_encrypt_ecb<<<dimBlock, dimGrid>>>(buf_d, numbytes, w_d);
-error2=cudaGetLastError();
-printf("CUDA error134.5: %s\n", cudaGetErrorString(error2));
+
   cudaMemcpy(buf, buf_d, numbytes, cudaMemcpyDeviceToHost);
   
-  cudaEventRecord(stop1, NULL);
+  cudaEventRecord(stop1);
   cudaEventSynchronize(stop1);
-  float msecTotal1 = 0.0f,total;
+  float msecTotal1,total;
   cudaEventElapsedTime(&msecTotal1, start1, stop1);
   total=msecTotal1/1000;
-  cout<<"time:"<<total<<endl;
-  cout<<"Throughput:"<<numbytes/total/1024/1024/1024<<" Gbps"<<endl;
-error2=cudaGetLastError();
-printf("CUDA error134.5: %s\n", cudaGetErrorString(error2));
-  cudaMemcpy(buf, buf_d, numbytes, cudaMemcpyDeviceToHost);
-  cudaFree(buf_d);
-  cudaFree(w_d);
+  printf("time:%f\n",total);
+  printf("Throughput: %f Gbps\n", numbytes*8/total/1024/1024/1024);
+
 }
 
 // aes decrypt demo
 void decryptdemo(uint8_t *key, uint8_t *buf, unsigned long numbytes){
   uint8_t *buf_d;
-  uint8_t *w_d;
+  
   uint8_t *w;
-  cudaError_t error2;
+
 
   cudaMemcpyToSymbol(sboxinv, sboxinv, sizeof(uint8_t)*256);
 
@@ -541,33 +534,32 @@ void decryptdemo(uint8_t *key, uint8_t *buf, unsigned long numbytes){
   cudaEventCreate(&start1);
   cudaEvent_t stop1;
   cudaEventCreate(&stop1);
-  cudaEventRecord(start1, NULL);
-  w = (uint8_t*)malloc(60*sizeof(uint8_t));
+  cudaEventRecord(start1);
+
+  w = (uint8_t*)malloc(240*sizeof(uint8_t));
   aes_key_expansion(key, w);
 
   cudaMalloc((void**)&buf_d, numbytes);
-  cudaMalloc((void**)&w_d, 60*sizeof(uint8_t));
+  cudaMalloc((void**)&w_d, 240*sizeof(uint8_t));
 
   cudaMemcpy(buf_d, buf, numbytes, cudaMemcpyHostToDevice);
-  cudaMemcpy(w_d, w, 60*sizeof(uint8_t), cudaMemcpyHostToDevice);
+  cudaMemcpyToSymbol(w_d, w, 240*sizeof(uint8_t), cudaMemcpyHostToDevice);
 
   dim3 dimBlock(ceil((double)numbytes / (double)(THREADS_PER_BLOCK * AES_BLOCK_SIZE)));
   dim3 dimGrid(THREADS_PER_BLOCK);
   printf("Creating %d threads over %d blocks\n", dimBlock.x*dimGrid.x, dimBlock.x);
   aes256_decrypt_ecb<<<dimBlock, dimGrid>>>(buf_d, numbytes, w_d);
-error2=cudaGetLastError();
-printf("CUDA error134.5: %s\n", cudaGetErrorString(error2));
+
   cudaMemcpy(buf, buf_d, numbytes, cudaMemcpyDeviceToHost);
 
-  cudaEventRecord(stop1, NULL);
+  cudaEventRecord(stop1);
   cudaEventSynchronize(stop1);
-  float msecTotal1 = 0.0f,total;
+  float msecTotal1,total;
   cudaEventElapsedTime(&msecTotal1, start1, stop1);
   total=msecTotal1/1000;
-  //cout<<"time:"<<total<<endl;
-  //cout<<"Throughput:"<<numbytes/total/1024/1024/1024<<" Gbps"<<endl;
-  cudaFree(buf_d);
-  cudaFree(w_d);
+  printf("time:%f\n",total);
+  printf("Throughput: %fGbps\n", numbytes*8/total/1024/1024/1024);
+
 
 }
 
@@ -583,8 +575,7 @@ int main(){
   uint8_t *buf; 
   unsigned long numbytes;
   char *fname;
-  clock_t start, enc_time, dec_time, end;
-  int mili_sec, i;
+  int  i;
   int padding;
  
   uint8_t key[32];
@@ -653,5 +644,5 @@ int main(){
 
   free(buf);
 
-  return EXIT_SUCCESS;
+  return 0;
 }
