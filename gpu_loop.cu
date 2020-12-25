@@ -10,10 +10,11 @@
 #include <iomanip>
 #include <cuda.h>
 
+
 //设置数据块长度16字节（128位）
 //设置gpu中每block中thread数量512
 #define AES_BLOCK_SIZE 16
-#define THREADS_PER_BLOCK 512
+#define THREADS_PER_BLOCK 1024
 
 // S盒，host，扩展密钥用
 uint8_t s_box[256] = {
@@ -153,6 +154,8 @@ __device__ void aes_subBytes_inv(uint8_t *buf){
 
 // 轮密钥加
 __device__ void aes_addRoundKey(uint8_t *buf, uint8_t *key,uint8_t r){
+  //register uint8_t i = 16;
+  //while (i--){
    buf[16] ^= key[16*r+16];
    buf[15] ^= key[16*r+15];
    buf[14] ^= key[16*r+14];
@@ -170,6 +173,7 @@ __device__ void aes_addRoundKey(uint8_t *buf, uint8_t *key,uint8_t r){
    buf[2] ^= key[16*r+2];
    buf[1] ^= key[16*r+1];
    buf[0] ^= key[16*r+0];
+  //}
 } 
 
 
@@ -193,6 +197,7 @@ __device__ void aes_shiftRows(uint8_t *buf){
   buf[14] = buf[6];
   buf[6]  = j;
 }
+
 
 
 // 逆行位移
@@ -253,6 +258,7 @@ __device__ void aes_mixColumns_inv(uint8_t *buf){
   }
 } 
 
+
 // 字循环 用于密钥扩展
 void rot_word(uint8_t *w) {
 	uint8_t tmp;
@@ -263,7 +269,6 @@ void rot_word(uint8_t *w) {
 	}
 	w[3] = tmp;
 }
-
 // 字节代换 用于密钥扩展
 void sub_word(uint8_t *w) {
 	uint8_t i;
@@ -271,7 +276,6 @@ void sub_word(uint8_t *w) {
 		w[i] = s_box[w[i]];
 	}
 }
-
 // 密钥扩展
 void aes_key_expansion(uint8_t *key, uint8_t *w) {
 	uint8_t tmp[4];
@@ -315,14 +319,16 @@ void aes_key_expansion(uint8_t *key, uint8_t *w) {
 }
 
 
-
-// 使用aes加密算法，对一块（128位）数据进行加密
+// 使用aes加密算法，对数据进行加密（在此处进行了stride loop复用）
 __global__ void aes256_encrypt_ecb(uint8_t *buf_d, unsigned long numbytes, uint8_t *key){
   uint8_t i;
   uint8_t buf_t[AES_BLOCK_SIZE]; 
-  //计算待加密数据在总数据中的偏移
-  unsigned long offset = (blockIdx.x * THREADS_PER_BLOCK * AES_BLOCK_SIZE) + (threadIdx.x * AES_BLOCK_SIZE);
-  if (offset >= numbytes) {  return; }
+  //在每一个网格（grid）中的偏移
+  int global_thread_index = blockDim.x*blockIdx.x + threadIdx.x;
+  //步长，等于每个网格中的线程数
+  int stride=blockDim.x*gridDim.x*AES_BLOCK_SIZE;
+  
+  for(int offset=global_thread_index * AES_BLOCK_SIZE;offset < numbytes;offset+=stride){
   //拷贝待加密数据至buf_t
   memcpy(buf_t, &buf_d[offset], AES_BLOCK_SIZE);
 
@@ -342,7 +348,7 @@ __global__ void aes256_encrypt_ecb(uint8_t *buf_d, unsigned long numbytes, uint8
   memcpy(&buf_d[offset], buf_t, AES_BLOCK_SIZE);
   __syncthreads();
 } 
-
+}
 
 
 // 使用aes解密算法，对一块（128位）数据进行解密
@@ -372,12 +378,11 @@ __global__ void aes256_decrypt_ecb(uint8_t *buf_d, unsigned long numbytes, uint8
 } 
 
 
-__shared__ uint8_t *w_d;
+
 //aes加密
 void encryptdemo(uint8_t *key, uint8_t *buf, unsigned long numbytes){
-  //待加密数据
   uint8_t *buf_d;
-  //扩展后的密钥
+  uint8_t *w_d;
   uint8_t *w;
 
   cudaMemcpyToSymbol(sbox, sbox, sizeof(uint8_t)*256);
@@ -385,7 +390,12 @@ void encryptdemo(uint8_t *key, uint8_t *buf, unsigned long numbytes){
   printf("\nBeginning encryption\n");
   //为扩展后密钥分配内存空间
   w = (uint8_t*)malloc(240*sizeof(uint8_t));
-  
+
+  cudaSetDevice(0); //选择设备
+  cudaDeviceProp prop;
+  cudaGetDeviceProperties(&prop, 0);
+  int num_mp = prop.multiProcessorCount; //获取gpu设备multiprocessor数量
+
   //记录加密算法开始时间
   cudaEvent_t start1;
   cudaEventCreate(&start1);
@@ -403,12 +413,12 @@ void encryptdemo(uint8_t *key, uint8_t *buf, unsigned long numbytes){
   cudaMemcpy(buf_d, buf, numbytes, cudaMemcpyHostToDevice);
   cudaMemcpy(w_d, w, 240*sizeof(uint8_t), cudaMemcpyHostToDevice);
 
-  //计算GRIDSIZE与BLOCKSIZE
-  dim3 dimBlock(ceil((double)numbytes / (double)(THREADS_PER_BLOCK * AES_BLOCK_SIZE)));
-  dim3 dimGrid(THREADS_PER_BLOCK);
-  printf("Creating %d threads over %d blocks\n", dimBlock.x*dimGrid.x, dimBlock.x);
-  //对每个数据块进行aes加密
-  aes256_encrypt_ecb<<<dimBlock, dimGrid>>>(buf_d, numbytes, w_d);
+  //将GridSize取值为multiprocessor数量的倍数，线程复用
+  dim3 ThreadperBlock(1024);
+  dim3 BlockperGrid(num_mp);
+
+  //对数据块进行aes加密
+  aes256_encrypt_ecb<<<BlockperGrid, ThreadperBlock>>>(buf_d, numbytes, w_d);
 
   cudaMemcpy(buf, buf_d, numbytes, cudaMemcpyDeviceToHost);
   
@@ -470,10 +480,12 @@ void decryptdemo(uint8_t *key, uint8_t *buf, unsigned long numbytes){
   printf("time:%f\n",total);
   printf("Throughput: %fGbps\n", numbytes/total/1024/1024/1024*8);
 
+
 }
 
 
 __global__ void GPU_init() { }
+
 
 int main(int argc,char** argv){
 
@@ -530,8 +542,9 @@ int main(int argc,char** argv){
   // gpu初始化
   GPU_init<<<1, 1>>>();
 
-  // 调用加密算法
+  // 调用加密算法 
   encryptdemo(key, buf, numbytes);
+
   // 将加密后的数据写入cipher.txt
   file = fopen("cipher.txt", "w");
   fwrite(buf, 1, numbytes, file);

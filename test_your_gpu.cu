@@ -1,3 +1,6 @@
+/*
+	输出gpu的基本信息。
+*/
 #include<stdio.h>
 #include<string.h>
 #include <stdint.h>
@@ -19,6 +22,14 @@ int main(){
     cout << "Maximum number of threads per thread block: " << devProp.maxThreadsPerBlock << std::endl;
     cout << "Maximum number of threads per EM: " << devProp.maxThreadsPerMultiProcessor << std::endl;
     cout << "Maximum number of thread bundles per EM: " << devProp.maxThreadsPerMultiProcessor / 32 << std::endl;
+	if (!devProp.deviceOverlap)
+	{
+		printf("No device will handle overlaps. so no speed up from stream.\n");
+		return 0;
+	}
+	else{
+		printf("Device will handle overlaps. speed up from stream.\n");
+	}
     return 0;
 }
 

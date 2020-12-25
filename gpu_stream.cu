@@ -153,6 +153,8 @@ __device__ void aes_subBytes_inv(uint8_t *buf){
 
 // 轮密钥加
 __device__ void aes_addRoundKey(uint8_t *buf, uint8_t *key,uint8_t r){
+  //register uint8_t i = 16;
+  //while (i--){
    buf[16] ^= key[16*r+16];
    buf[15] ^= key[16*r+15];
    buf[14] ^= key[16*r+14];
@@ -170,8 +172,8 @@ __device__ void aes_addRoundKey(uint8_t *buf, uint8_t *key,uint8_t r){
    buf[2] ^= key[16*r+2];
    buf[1] ^= key[16*r+1];
    buf[0] ^= key[16*r+0];
+  //}
 } 
-
 
 //行位移
 __device__ void aes_shiftRows(uint8_t *buf){
@@ -216,7 +218,6 @@ __device__ void aes_shiftRows_inv(uint8_t *buf){
   buf[14] = j;
 } 
 
-
 // 列混合
 __device__ void aes_mixColumns(uint8_t *buf){
   register uint8_t i, a, b, c, d, e;
@@ -255,71 +256,73 @@ __device__ void aes_mixColumns_inv(uint8_t *buf){
 
 // 字循环 用于密钥扩展
 void rot_word(uint8_t *w) {
-	uint8_t tmp;
-	uint8_t i;
-	tmp = w[0];
-	for (i = 0; i < 3; i++) {
-		w[i] = w[i+1];
-	}
-	w[3] = tmp;
+  uint8_t tmp;
+  uint8_t i;
+  tmp = w[0];
+  for (i = 0; i < 3; i++) {
+    w[i] = w[i+1];
+  }
+  w[3] = tmp;
 }
 
 // 字节代换 用于密钥扩展
 void sub_word(uint8_t *w) {
-	uint8_t i;
-	for (i = 0; i < 4; i++) {
-		w[i] = s_box[w[i]];
-	}
+  uint8_t i;
+  for (i = 0; i < 4; i++) {
+    w[i] = s_box[w[i]];
+  }
 }
 
 // 密钥扩展
 void aes_key_expansion(uint8_t *key, uint8_t *w) {
-	uint8_t tmp[4];
-	uint8_t i;
-	int Nb=4;
-	int Nr=14;
-	int Nk=8;
-	uint8_t len = Nb*(Nr+1);
-	uint8_t RC[11] = {0x00,0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1B,0x36};
+  uint8_t tmp[4];
+  uint8_t i;
+  int Nb=4;
+  int Nr=14;
+  int Nk=8;
+  uint8_t len = Nb*(Nr+1);
+  uint8_t RC[11] = {0x00,0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1B,0x36};
 
-	for (i = 0; i < Nk; i++) {
-		w[4*i+0] = key[4*i+0];
-		w[4*i+1] = key[4*i+1];
-		w[4*i+2] = key[4*i+2];
-		w[4*i+3] = key[4*i+3];
-	}
+  for (i = 0; i < Nk; i++) {
+    w[4*i+0] = key[4*i+0];
+    w[4*i+1] = key[4*i+1];
+    w[4*i+2] = key[4*i+2];
+    w[4*i+3] = key[4*i+3];
+  }
 
-	for (i = Nk; i < len; i++) {
-		tmp[0] = w[4*(i-1)+0];
-		tmp[1] = w[4*(i-1)+1];
-		tmp[2] = w[4*(i-1)+2];
-		tmp[3] = w[4*(i-1)+3];
+  for (i = Nk; i < len; i++) {
+    tmp[0] = w[4*(i-1)+0];
+    tmp[1] = w[4*(i-1)+1];
+    tmp[2] = w[4*(i-1)+2];
+    tmp[3] = w[4*(i-1)+3];
 
-		if (i%Nk == 0) {
-			rot_word(tmp);
-			sub_word(tmp);
-			tmp[0] = RC[i/Nk]^tmp[0];
-			tmp[1] = 0x00^tmp[1];
-			tmp[2] = 0x00^tmp[2];
-			tmp[3] = 0x00^tmp[3];
-		} else if (Nk > 6 && i%Nk == 4) {
-			sub_word(tmp);
-		}
+    if (i%Nk == 0) {
+      rot_word(tmp);
+      sub_word(tmp);
+      tmp[0] = RC[i/Nk]^tmp[0];
+      tmp[1] = 0x00^tmp[1];
+      tmp[2] = 0x00^tmp[2];
+      tmp[3] = 0x00^tmp[3];
+    } else if (Nk > 6 && i%Nk == 4) {
+      sub_word(tmp);
+    }
 
-		w[4*i+0] = w[4*(i-Nk)+0]^tmp[0];
-		w[4*i+1] = w[4*(i-Nk)+1]^tmp[1];
-		w[4*i+2] = w[4*(i-Nk)+2]^tmp[2];
-		w[4*i+3] = w[4*(i-Nk)+3]^tmp[3];
-	}
+    w[4*i+0] = w[4*(i-Nk)+0]^tmp[0];
+    w[4*i+1] = w[4*(i-Nk)+1]^tmp[1];
+    w[4*i+2] = w[4*(i-Nk)+2]^tmp[2];
+    w[4*i+3] = w[4*(i-Nk)+3]^tmp[3];
+  }
 
 }
 
 
-
-// 使用aes加密算法，对一块（128位）数据进行加密
-__global__ void aes256_encrypt_ecb(uint8_t *buf_d, unsigned long numbytes, uint8_t *key){
+// 使用aes加密算法，对一块（128位）数据进行加密 
+__constant__ uint8_t w2[240];
+__constant__ uint8_t w3[240];
+__global__ void aes256_encrypt_ecb(uint8_t *buf_d, unsigned long numbytes){
+  uint8_t *key=w2;
   uint8_t i;
-  uint8_t buf_t[AES_BLOCK_SIZE]; 
+  uint8_t buf_t[AES_BLOCK_SIZE]; // thread buffer
   //计算待加密数据在总数据中的偏移
   unsigned long offset = (blockIdx.x * THREADS_PER_BLOCK * AES_BLOCK_SIZE) + (threadIdx.x * AES_BLOCK_SIZE);
   if (offset >= numbytes) {  return; }
@@ -337,7 +340,6 @@ __global__ void aes256_encrypt_ecb(uint8_t *buf_d, unsigned long numbytes, uint8
   aes_subBytes(buf_t);
   aes_shiftRows(buf_t);
   aes_addRoundKey(buf_t,key,14);
-
   //将加密后的buf_t拷贝回总数据
   memcpy(&buf_d[offset], buf_t, AES_BLOCK_SIZE);
   __syncthreads();
@@ -346,8 +348,9 @@ __global__ void aes256_encrypt_ecb(uint8_t *buf_d, unsigned long numbytes, uint8
 
 
 // 使用aes解密算法，对一块（128位）数据进行解密
-__global__ void aes256_decrypt_ecb(uint8_t *buf_d, unsigned long numbytes, uint8_t *key){
-  uint8_t i, rcon;
+__global__ void aes256_decrypt_ecb(uint8_t *buf_d, unsigned long numbytes){
+  uint8_t i;
+  uint8_t *key=w3;
   uint8_t buf_t[AES_BLOCK_SIZE];
   //计算待解密数据在总数据中的偏移
   unsigned long offset = (blockIdx.x * THREADS_PER_BLOCK * AES_BLOCK_SIZE) + (threadIdx.x * AES_BLOCK_SIZE);
@@ -372,47 +375,70 @@ __global__ void aes256_decrypt_ecb(uint8_t *buf_d, unsigned long numbytes, uint8
 } 
 
 
-__shared__ uint8_t *w_d;
+
 //aes加密
 void encryptdemo(uint8_t *key, uint8_t *buf, unsigned long numbytes){
-  //待加密数据
   uint8_t *buf_d;
-  //扩展后的密钥
+
   uint8_t *w;
-
-  cudaMemcpyToSymbol(sbox, sbox, sizeof(uint8_t)*256);
-
-  printf("\nBeginning encryption\n");
-  //为扩展后密钥分配内存空间
-  w = (uint8_t*)malloc(240*sizeof(uint8_t));
+  const int nStreams = 16;
+  const int ChunkSize = numbytes / nStreams;
   
+  printf("\nBeginning encryption\n");
+
   //记录加密算法开始时间
   cudaEvent_t start1;
   cudaEventCreate(&start1);
   cudaEvent_t stop1;
   cudaEventCreate(&stop1);
   cudaEventRecord(start1);
-
-  //扩展密钥
+  //创建工作流 
+  cudaStream_t streams[nStreams];
+  for (int i = 0; i < nStreams; i++) {
+    cudaStreamCreate(&streams[i]);
+  }
+  //将s盒拷贝到常量内存中，可以加快读取速度。
+  cudaMemcpyToSymbol(sbox, sbox, sizeof(uint8_t)*256);
+  w = (uint8_t*)malloc(240*sizeof(uint8_t));
+  //密钥扩展
   aes_key_expansion(key, w);
-
-  //为数据和扩展后的密钥分配显存空间
   cudaMalloc((void**)&buf_d, numbytes);
-  cudaMalloc((void**)&w_d, 240*sizeof(uint8_t));
-  //从内存拷贝至显存
-  cudaMemcpy(buf_d, buf, numbytes, cudaMemcpyHostToDevice);
-  cudaMemcpy(w_d, w, 240*sizeof(uint8_t), cudaMemcpyHostToDevice);
-
-  //计算GRIDSIZE与BLOCKSIZE
-  dim3 dimBlock(ceil((double)numbytes / (double)(THREADS_PER_BLOCK * AES_BLOCK_SIZE)));
+  //将扩展后的密钥存储到常量内存中
+  cudaMemcpyToSymbol(w2, w, 240*sizeof(uint8_t));
+  //计算dimblock数量，需要多除一个工作流的总数
+  dim3 dimBlock(ceil((double)numbytes/nStreams / (double)(THREADS_PER_BLOCK * AES_BLOCK_SIZE)));
   dim3 dimGrid(THREADS_PER_BLOCK);
   printf("Creating %d threads over %d blocks\n", dimBlock.x*dimGrid.x, dimBlock.x);
-  //对每个数据块进行aes加密
-  aes256_encrypt_ecb<<<dimBlock, dimGrid>>>(buf_d, numbytes, w_d);
 
-  cudaMemcpy(buf, buf_d, numbytes, cudaMemcpyDeviceToHost);
-  
-  //记录加密算法结束时间，并计算加密速度
+  int nOffset = 0;
+  //开始工作流
+  for(int i=0; i<nStreams; i++)
+  {
+    
+    nOffset = ChunkSize*i;
+
+    cudaMemcpyAsync(  buf_d+nOffset,
+                      buf+nOffset,
+                      ChunkSize,
+                      cudaMemcpyHostToDevice,
+                      streams[i] );
+
+
+    aes256_encrypt_ecb<<<dimBlock, dimGrid, 0, streams[i]>>>(
+                                   buf_d+nOffset, 
+                                   ChunkSize);
+
+    cudaMemcpyAsync(  buf+nOffset,
+                      buf_d+nOffset,
+                      ChunkSize,
+                      cudaMemcpyDeviceToHost,
+                      streams[i] );
+      
+  }
+  //等待运算完成
+  cudaDeviceSynchronize();
+
+  //记录加密算法结束时间，并计算加密速度  
   cudaEventRecord(stop1);
   cudaEventSynchronize(stop1);
   float msecTotal1,total;
@@ -423,15 +449,16 @@ void encryptdemo(uint8_t *key, uint8_t *buf, unsigned long numbytes){
 
 }
 
+
 // aes解密
 void decryptdemo(uint8_t *key, uint8_t *buf, unsigned long numbytes){
   uint8_t *buf_d;
-  uint8_t *w_d;
+
   uint8_t *w;
-
-  cudaMemcpyToSymbol(sboxinv, sboxinv, sizeof(uint8_t)*256);
-
-  printf("\nBeginning decryption\n");
+  const int nStreams = 16;
+  const int ChunkSize = numbytes / nStreams;
+  
+  printf("\nBeginning encryption\n");
 
   //记录解密算法开始时间
   cudaEvent_t start1;
@@ -439,27 +466,51 @@ void decryptdemo(uint8_t *key, uint8_t *buf, unsigned long numbytes){
   cudaEvent_t stop1;
   cudaEventCreate(&stop1);
   cudaEventRecord(start1);
-
-  //为扩展后密钥分配内存空间
+  //创建工作流  
+  cudaStream_t streams[nStreams];
+  for (int i = 0; i < nStreams; i++) {
+    cudaStreamCreate(&streams[i]);
+  }
+  //将s盒拷贝到常量内存中，可以加快读取速度。
+  cudaMemcpyToSymbol(sbox, sbox, sizeof(uint8_t)*256);
   w = (uint8_t*)malloc(240*sizeof(uint8_t));
-
+  //密钥扩展
   aes_key_expansion(key, w);
-
-  //为数据和扩展后的密钥分配显存空间
   cudaMalloc((void**)&buf_d, numbytes);
-  cudaMalloc((void**)&w_d, 240*sizeof(uint8_t));
-  //从内存拷贝至显存
-  cudaMemcpy(buf_d, buf, numbytes, cudaMemcpyHostToDevice);
-  cudaMemcpy(w_d, w, 240*sizeof(uint8_t), cudaMemcpyHostToDevice);
-
-  //计算GRIDSIZE与BLOCKSIZE
-  dim3 dimBlock(ceil((double)numbytes / (double)(THREADS_PER_BLOCK * AES_BLOCK_SIZE)));
+  //将扩展后的密钥存储到常量内存中
+  cudaMemcpyToSymbol(w3, w, 240*sizeof(uint8_t));
+  //计算dimblock数量，需要多除一个工作流的总数
+  dim3 dimBlock(ceil((double)numbytes/nStreams / (double)(THREADS_PER_BLOCK * AES_BLOCK_SIZE)));
   dim3 dimGrid(THREADS_PER_BLOCK);
   printf("Creating %d threads over %d blocks\n", dimBlock.x*dimGrid.x, dimBlock.x);
-  //对每个数据块进行aes解密
-  aes256_decrypt_ecb<<<dimBlock, dimGrid>>>(buf_d, numbytes, w_d);
 
-  cudaMemcpy(buf, buf_d, numbytes, cudaMemcpyDeviceToHost);
+  int nOffset = 0;
+  //开始工作流
+  for(int i=0; i<nStreams; i++)
+  {
+    
+    nOffset = ChunkSize*i;
+
+    cudaMemcpyAsync(  buf_d+nOffset,
+                      buf+nOffset,
+                      ChunkSize,
+                      cudaMemcpyHostToDevice,
+                      streams[i] );
+
+
+    aes256_decrypt_ecb<<<dimBlock, dimGrid, 0, streams[i]>>>(
+                                   buf_d+nOffset, 
+                                   ChunkSize);
+
+    cudaMemcpyAsync(  buf+nOffset,
+                      buf_d+nOffset,
+                      ChunkSize,
+                      cudaMemcpyDeviceToHost,
+                      streams[i] );
+      
+  }
+  //等待运算完成
+  cudaDeviceSynchronize();
 
   //记录解密算法结束时间，并计算解密速度
   cudaEventRecord(stop1);
@@ -468,17 +519,18 @@ void decryptdemo(uint8_t *key, uint8_t *buf, unsigned long numbytes){
   cudaEventElapsedTime(&msecTotal1, start1, stop1);
   total=msecTotal1/1000;
   printf("time:%f\n",total);
-  printf("Throughput: %fGbps\n", numbytes/total/1024/1024/1024*8);
+  printf("Throughput: %f Gbps\n", numbytes/total/1024/1024/1024*8);
 
 }
 
-
 __global__ void GPU_init() { }
+
+
 
 int main(int argc,char** argv){
 
   FILE *file;
-  uint8_t *buf; 
+  uint8_t *buf,*buf2; 
   unsigned long numbytes;
   char *fname;
   int  i;
@@ -510,7 +562,7 @@ int main(int argc,char** argv){
 
   // 将待加密数据读取到内存
   fseek(file, 0L, SEEK_SET);
-  buf = (uint8_t*)calloc(numbytes, sizeof(uint8_t));
+  buf = (uint8_t*)calloc(numbytes, sizeof(uint8_t)); 
   if(buf == NULL) exit(1);
   if (fread(buf, 1, numbytes, file) != numbytes)
   {
@@ -520,31 +572,33 @@ int main(int argc,char** argv){
   fclose(file);
 
   // 补全
-  padding = AES_BLOCK_SIZE - numbytes % AES_BLOCK_SIZE;
+  padding = AES_BLOCK_SIZE * 16 - numbytes % (AES_BLOCK_SIZE * 16);
   numbytes += padding;
   printf("Padding file with %d bytes for a new size of %lu\n", padding, numbytes);
 
   // 生成密钥
   for (i = 0; i < sizeof(key);i++) key[i] = i;
-
+  cudaMallocHost((void**)&buf2, numbytes);
+  cudaMemcpy(buf2, buf, numbytes, cudaMemcpyHostToHost);
   // gpu初始化
   GPU_init<<<1, 1>>>();
 
+
   // 调用加密算法
-  encryptdemo(key, buf, numbytes);
+  encryptdemo(key, buf2, numbytes);
   // 将加密后的数据写入cipher.txt
   file = fopen("cipher.txt", "w");
-  fwrite(buf, 1, numbytes, file);
+  fwrite(buf2, 1, numbytes, file);
   fclose(file);
 
   // 解密
-  decryptdemo(key, buf, numbytes);
+  decryptdemo(key, buf2, numbytes);
   // 将解密后的数据写回output.txt
   file = fopen("output.txt", "w");
-  fwrite(buf, 1, numbytes - padding, file);
+  fwrite(buf2, 1, numbytes - padding, file);
   fclose(file);
-
   free(buf);
+  //free(buf2);
 
-  return 0;
+  return EXIT_SUCCESS;
 }
