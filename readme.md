@@ -2,7 +2,7 @@
 
 这是武汉大学密码学大作业——利用gpu加速aes算法。
 
-This is  cryptography final project of Wuhan University -- AES algorithm acceleration on GPU.
+This is the cryptography final project of Wuhan University -- AES algorithm acceleration on GPU.
 
 ---
 
